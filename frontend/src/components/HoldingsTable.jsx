@@ -56,6 +56,7 @@ export function HoldingsTable({ holdings, onDelete, onEdit }) {
             <Th field="avg_cost" right>Avg Cost</Th>
             <Th field="current_price" right>Price</Th>
             <Th field="day_change_pct" right>Day</Th>
+            <Th field="cost_basis" right>Invested</Th>
             <Th field="market_value" right>Value</Th>
             <Th field="gain_loss" right>Gain/Loss</Th>
             <Th field="gain_loss_pct" right>Return</Th>
@@ -72,6 +73,9 @@ export function HoldingsTable({ holdings, onDelete, onEdit }) {
               <td className="right mono">{fmt.currency(h.current_price)}</td>
               <td className="right mono" style={{ color: gainColor(h.day_change_pct) }}>
                 {fmt.pct(h.day_change_pct)}
+              </td>
+              <td className="right mono" style={{ color: '#a78bfa', fontWeight: 500 }}>
+                {fmt.currency(h.cost_basis)}
               </td>
               <td className="right mono">{fmt.currency(h.market_value)}</td>
               <td className="right mono" style={{ color: gainColor(h.gain_loss) }}>
