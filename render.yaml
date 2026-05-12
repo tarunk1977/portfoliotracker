@@ -1,0 +1,31 @@
+services:
+  # ── Backend (Express API) ──────────────────────────────
+  - type: web
+    name: folio-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # Set this manually in Render dashboard → paste your Neon connection string
+      - key: FRONTEND_URL
+        sync: false          # Set to your frontend Render URL after deploying frontend
+      - key: PORT
+        value: 3001
+    healthCheckPath: /health
+
+  # ── Frontend (React) ───────────────────────────────────
+  - type: web
+    name: folio-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false          # Set to your backend Render URL e.g. https://folio-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
