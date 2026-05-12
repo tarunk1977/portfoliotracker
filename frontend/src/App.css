@@ -449,3 +449,60 @@ body {
   .field-row { grid-template-columns: 1fr; }
   .header-actions .btn-secondary span { display: none; }
 }
+
+/* ── Transactions ────────────────────────────────────── */
+.transactions-page { display: flex; flex-direction: column; gap: 16px; }
+.tx-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.tx-stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.tx-stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.tx-stat-value { font-size: 18px; font-weight: 600; font-family: 'DM Mono', monospace; }
+.tx-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.filter-row { display: flex; align-items: center; gap: 8px; }
+.select-sm { width: auto; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+.type-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.type-pill.buy { background: rgba(239,68,68,0.12); color: #ef4444; }
+.type-pill.sell { background: rgba(34,197,94,0.12); color: #22c55e; }
+.type-toggle {
+  display: flex;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 3px;
+}
+.type-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: 1;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.type-btn.buy.active { background: rgba(239,68,68,0.15); color: #ef4444; }
+.type-btn.sell.active { background: rgba(34,197,94,0.15); color: #22c55e; }
+.type-btn:hover:not(.active) { color: var(--text); }

@@ -6,6 +6,7 @@ import { HoldingsTable } from './components/HoldingsTable';
 import { AllocationChart, GainLossChart } from './components/Charts';
 import { AddHoldingModal } from './components/AddHoldingModal';
 import { CSVImport } from './components/CSVImport';
+import { TransactionsPage } from './components/TransactionsPage';
 import { api } from './utils/api';
 import './App.css';
 
@@ -84,6 +85,10 @@ export default function App() {
                 className={`tab ${activeTab === 'charts' ? 'active' : ''}`}
                 onClick={() => setActiveTab('charts')}
               >Charts</button>
+              <button
+                className={`tab ${activeTab === 'transactions' ? 'active' : ''}`}
+                onClick={() => setActiveTab('transactions')}
+              >Transactions</button>
             </div>
 
             {activeTab === 'holdings' && (
@@ -100,6 +105,10 @@ export default function App() {
                 <AllocationChart holdings={data?.holdings} />
                 <GainLossChart holdings={data?.holdings} />
               </div>
+            )}
+
+            {activeTab === 'transactions' && (
+              <TransactionsPage holdings={data?.holdings} />
             )}
           </>
         )}
