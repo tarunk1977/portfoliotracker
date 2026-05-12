@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, X, TrendingUp, TrendingDown, Filter } from 'lucide-react';
+import { Plus, X, TrendingUp, TrendingDown, Filter, Trash2 } from 'lucide-react';
 import { api } from '../utils/api';
 import { fmt } from '../utils/format';
 
@@ -113,7 +113,7 @@ function AddTransactionModal({ onClose, onSave, holdings }) {
 }
 
 // ── Transactions Table ────────────────────────────────────────────────────
-export function TransactionsPage({ holdings }) {
+export function TransactionsPage({ holdings, onTradeLogged }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -132,6 +132,18 @@ export function TransactionsPage({ holdings }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleDelete(id) {
+    if (!window.confirm('Delete this transaction? Holdings will be recalculated.')) return;
+    await api.request(`/api/transactions/${id}`, { method: 'DELETE' });
+    await load();
+    onTradeLogged?.();
+  }
+
+  async function handleSave() {
+    await load();
+    onTradeLogged?.();
+  }
 
   const tickers = ['ALL', ...Array.from(new Set(transactions.map(t => t.ticker))).sort()];
   const filtered = filterTicker === 'ALL' ? transactions : transactions.filter(t => t.ticker === filterTicker);
@@ -192,6 +204,7 @@ export function TransactionsPage({ holdings }) {
                 <th className="right">Price</th>
                 <th className="right">Total</th>
                 <th>Notes</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -216,6 +229,11 @@ export function TransactionsPage({ holdings }) {
                       {isBuy ? '-' : '+'}{fmt.currency(total)}
                     </td>
                     <td style={{ color: 'var(--muted)', fontSize: 12 }}>{t.notes || '—'}</td>
+                    <td>
+                      <button className="icon-btn danger" onClick={() => handleDelete(t.id)} title="Delete transaction">
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
@@ -227,7 +245,7 @@ export function TransactionsPage({ holdings }) {
       {showAdd && (
         <AddTransactionModal
           onClose={() => setShowAdd(false)}
-          onSave={load}
+          onSave={handleSave}
           holdings={holdings}
         />
       )}

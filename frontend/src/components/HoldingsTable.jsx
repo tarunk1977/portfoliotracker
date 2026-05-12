@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Trash2, Edit2, ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { fmt, gainColor } from '../utils/format';
 
-export function HoldingsTable({ holdings, onDelete, onEdit }) {
+export function HoldingsTable({ holdings }) {
   const [sortField, setSortField] = useState('market_value');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -40,7 +40,7 @@ export function HoldingsTable({ holdings, onDelete, onEdit }) {
   if (!holdings?.length) {
     return (
       <div className="empty-state">
-        <p>No holdings yet. Add your first position above or import a CSV.</p>
+        <p>No holdings yet. Go to the <strong>Transactions</strong> tab and log your first buy.</p>
       </div>
     );
   }
@@ -60,7 +60,6 @@ export function HoldingsTable({ holdings, onDelete, onEdit }) {
             <Th field="market_value" right>Value</Th>
             <Th field="gain_loss" right>Gain/Loss</Th>
             <Th field="gain_loss_pct" right>Return</Th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -83,14 +82,6 @@ export function HoldingsTable({ holdings, onDelete, onEdit }) {
               </td>
               <td className="right mono" style={{ color: gainColor(h.gain_loss_pct), fontWeight: 600 }}>
                 {fmt.pct(h.gain_loss_pct)}
-              </td>
-              <td className="actions-cell">
-                <button className="icon-btn" onClick={() => onEdit(h)} title="Edit">
-                  <Edit2 size={14} />
-                </button>
-                <button className="icon-btn danger" onClick={() => onDelete(h.ticker)} title="Remove">
-                  <Trash2 size={14} />
-                </button>
               </td>
             </tr>
           ))}

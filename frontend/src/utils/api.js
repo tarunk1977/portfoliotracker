@@ -1,6 +1,6 @@
 const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,

@@ -1,35 +1,17 @@
 import React, { useState } from 'react';
-import { Plus, Upload, RefreshCw, TrendingUp, Clock } from 'lucide-react';
+import { Upload, RefreshCw, TrendingUp, Clock } from 'lucide-react';
 import { usePortfolio } from './hooks/usePortfolio';
 import { SummaryCards } from './components/SummaryCards';
 import { HoldingsTable } from './components/HoldingsTable';
 import { AllocationChart, GainLossChart } from './components/Charts';
-import { AddHoldingModal } from './components/AddHoldingModal';
 import { CSVImport } from './components/CSVImport';
 import { TransactionsPage } from './components/TransactionsPage';
-import { api } from './utils/api';
 import './App.css';
 
 export default function App() {
   const { data, loading, error, refresh, lastUpdated } = usePortfolio(60000);
-  const [showAdd, setShowAdd] = useState(false);
   const [showCSV, setShowCSV] = useState(false);
-  const [editHolding, setEditHolding] = useState(null);
   const [activeTab, setActiveTab] = useState('holdings');
-  const [deleting, setDeleting] = useState(null);
-
-  async function handleDelete(ticker) {
-    if (!window.confirm(`Remove ${ticker} from your portfolio?`)) return;
-    setDeleting(ticker);
-    await api.deleteHolding(ticker);
-    await refresh();
-    setDeleting(null);
-  }
-
-  function handleEdit(holding) {
-    setEditHolding(holding);
-    setShowAdd(true);
-  }
 
   const timeStr = lastUpdated?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -53,8 +35,8 @@ export default function App() {
             <button className="btn-secondary" onClick={() => setShowCSV(true)}>
               <Upload size={15} /> Import CSV
             </button>
-            <button className="btn-primary" onClick={() => { setEditHolding(null); setShowAdd(true); }}>
-              <Plus size={15} /> Add Position
+            <button className="btn-primary" onClick={() => setActiveTab('transactions')}>
+              + Log Trade
             </button>
           </div>
         </div>
@@ -77,27 +59,13 @@ export default function App() {
             <SummaryCards summary={data?.summary} />
 
             <div className="tabs">
-              <button
-                className={`tab ${activeTab === 'holdings' ? 'active' : ''}`}
-                onClick={() => setActiveTab('holdings')}
-              >Holdings</button>
-              <button
-                className={`tab ${activeTab === 'charts' ? 'active' : ''}`}
-                onClick={() => setActiveTab('charts')}
-              >Charts</button>
-              <button
-                className={`tab ${activeTab === 'transactions' ? 'active' : ''}`}
-                onClick={() => setActiveTab('transactions')}
-              >Transactions</button>
+              <button className={`tab ${activeTab === 'holdings' ? 'active' : ''}`} onClick={() => setActiveTab('holdings')}>Holdings</button>
+              <button className={`tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts</button>
+              <button className={`tab ${activeTab === 'transactions' ? 'active' : ''}`} onClick={() => setActiveTab('transactions')}>Transactions</button>
             </div>
 
             {activeTab === 'holdings' && (
-              <HoldingsTable
-                holdings={data?.holdings}
-                onDelete={handleDelete}
-                onEdit={handleEdit}
-                deleting={deleting}
-              />
+              <HoldingsTable holdings={data?.holdings} />
             )}
 
             {activeTab === 'charts' && (
@@ -108,19 +76,11 @@ export default function App() {
             )}
 
             {activeTab === 'transactions' && (
-              <TransactionsPage holdings={data?.holdings} />
+              <TransactionsPage holdings={data?.holdings} onTradeLogged={refresh} />
             )}
           </>
         )}
       </main>
-
-      {showAdd && (
-        <AddHoldingModal
-          onClose={() => { setShowAdd(false); setEditHolding(null); }}
-          onSave={refresh}
-          editHolding={editHolding}
-        />
-      )}
 
       {showCSV && (
         <CSVImport
