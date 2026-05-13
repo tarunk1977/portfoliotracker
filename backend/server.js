@@ -229,6 +229,49 @@ app.post('/api/import-csv', upload.single('file'), async (req, res) => {
   }
 });
 
+// POST /api/ai/chat - proxy to Anthropic API (keeps API key server-side)
+app.post('/api/ai/chat', async (req, res) => {
+  const { messages, systemPrompt } = req.body;
+  if (!messages?.length) return res.status(400).json({ error: 'messages required' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'AI not configured. Add ANTHROPIC_API_KEY to backend environment variables.' });
+
+  try {
+    const fetch = require('node-fetch');
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'web-search-2025-03-05',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: systemPrompt,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json({ error: data.error?.message || 'AI request failed' });
+
+    // Extract all text blocks (skip tool_use/tool_result blocks)
+    const text = data.content
+      ?.filter(b => b.type === 'text')
+      ?.map(b => b.text)
+      ?.join('\n') || 'No response generated.';
+
+    res.json({ text });
+  } catch (e) {
+    console.error('AI proxy error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 initDB().then(() => {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

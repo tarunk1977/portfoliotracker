@@ -80,29 +80,22 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
     setMessages(newMessages);
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+      const response = await fetch(`${BASE}/api/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          system: systemPrompt,
-          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+          systemPrompt,
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         }),
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'AI request failed');
 
-      // Extract text from response (handle tool use blocks)
-      const textContent = data.content
-        ?.filter(block => block.type === 'text')
-        ?.map(block => block.text)
-        ?.join('\n') || 'Sorry, I could not generate a response.';
-
-      setMessages(prev => [...prev, { role: 'assistant', content: textContent }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: data.text }]);
     } catch (e) {
-      setError('Failed to get AI response. Please try again.');
+      setError(`Failed to get AI response: ${e.message}`);
       console.error(e);
     } finally {
       setLoading(false);
