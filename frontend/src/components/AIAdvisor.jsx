@@ -1,6 +1,53 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, RefreshCw, TrendingUp, AlertTriangle, PieChart, Search } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Sparkles, RefreshCw, AlertTriangle, Mail, X } from 'lucide-react';
 import { fmt } from '../utils/format';
+import { api } from '../utils/api';
+
+// ── Email Modal ───────────────────────────────────────────────────────────────
+function EmailModal({ onClose, onSend, sending }) {
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+
+  function handleSend() {
+    if (!email.includes('@')) { setError('Enter a valid email address'); return; }
+    onSend(email);
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h2>Email this chat</h2>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="modal-form">
+          <div className="field-group">
+            <label>Recipient email</label>
+            <input
+              className="input"
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSend()}
+              placeholder="you@example.com"
+              autoFocus
+            />
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--muted)' }}>
+            The full chat transcript will be sent as a nicely formatted email.
+          </p>
+          {error && <div className="error-msg">{error}</div>}
+          <div className="modal-actions">
+            <button className="btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn-primary" onClick={handleSend} disabled={sending}>
+              {sending ? 'Sending…' : <><Mail size={14} /> Send email</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STARTER_PROMPTS = [
   { icon: '📊', label: 'Portfolio health check', prompt: 'Give me a detailed analysis of my current portfolio health. What are the strengths and weaknesses?' },
@@ -40,6 +87,21 @@ export function AIAdvisor({ holdings, summary }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [sessionCost, setSessionCost] = useState(0);
+  const [sessionTokens, setSessionTokens] = useState(0);
+  const [usageStats, setUsageStats] = useState(null);
+  const [showEmail, setShowEmail] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSuccess, setEmailSuccess] = useState('');
+
+  const loadUsage = useCallback(async () => {
+    try {
+      const stats = await api.getAIUsage();
+      setUsageStats(stats);
+    } catch (e) { console.error('Usage fetch failed', e); }
+  }, []);
+
+  useEffect(() => { loadUsage(); }, [loadUsage]);
   const bottomRef = useRef();
   const inputRef = useRef();
 
@@ -94,6 +156,13 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
       if (!response.ok) throw new Error(data.error || 'AI request failed');
 
       setMessages(prev => [...prev, { role: 'assistant', content: data.text }]);
+
+      // Track cost
+      if (data.usage) {
+        setSessionCost(prev => prev + (data.usage.cost_usd || 0));
+        setSessionTokens(prev => prev + (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0));
+        loadUsage(); // refresh persistent stats
+      }
     } catch (e) {
       setError(`Failed to get AI response: ${e.message}`);
       console.error(e);
@@ -112,7 +181,37 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
   function reset() {
     setMessages([]);
     setError('');
+    setSessionCost(0);
+    setSessionTokens(0);
+    setEmailSuccess('');
     inputRef.current?.focus();
+  }
+
+  async function sendEmail(to) {
+    setEmailSending(true);
+    try {
+      const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+      const fmtSummary = summary ? {
+        total_value: fmt.currency(summary.total_value),
+        total_cost: fmt.currency(summary.total_cost),
+        total_gain_loss: fmt.currency(summary.total_gain_loss),
+        total_gain_loss_pct: fmt.pct(summary.total_gain_loss_pct),
+      } : null;
+      const res = await fetch(`${BASE}/api/ai/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, messages, summary: fmtSummary }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setShowEmail(false);
+      setEmailSuccess(`Chat sent to ${to} ✓`);
+      setTimeout(() => setEmailSuccess(''), 4000);
+    } catch (e) {
+      setError(`Email failed: ${e.message}`);
+    } finally {
+      setEmailSending(false);
+    }
   }
 
   // Format assistant message with basic markdown-like rendering
@@ -148,9 +247,19 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
           </div>
         </div>
         {hasMessages && (
-          <button className="btn-ghost" onClick={reset} title="Start new conversation">
-            <RefreshCw size={14} /> New chat
-          </button>
+          <div className="ai-header-right">
+            {sessionCost > 0 && (
+              <span className="cost-pill" title={`${sessionTokens.toLocaleString()} tokens used`}>
+                ~${sessionCost < 0.01 ? '<0.01' : sessionCost.toFixed(3)}
+              </span>
+            )}
+            <button className="btn-ghost" onClick={() => setShowEmail(true)} title="Email this chat">
+              <Mail size={14} /> Email
+            </button>
+            <button className="btn-ghost" onClick={reset} title="Start new conversation">
+              <RefreshCw size={14} /> New chat
+            </button>
+          </div>
         )}
       </div>
 
@@ -158,6 +267,35 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
       <div className="ai-disclaimer">
         <AlertTriangle size={13} />
         AI-generated insights are for informational purposes only and not professional financial advice. Always do your own research.
+      </div>
+
+      {/* Usage stats bar */}
+      <div className="ai-usage-bar">
+        <div className="usage-stat">
+          <span className="usage-label">This session</span>
+          <span className="usage-value" title={`${sessionTokens.toLocaleString()} tokens`}>
+            {sessionCost < 0.001 ? '$0.000' : `$${sessionCost.toFixed(3)}`}
+          </span>
+        </div>
+        <div className="usage-divider" />
+        <div className="usage-stat">
+          <span className="usage-label">This month</span>
+          <span className="usage-value">
+            {usageStats ? `$${parseFloat(usageStats.month_cost || 0).toFixed(3)}` : '—'}
+          </span>
+        </div>
+        <div className="usage-divider" />
+        <div className="usage-stat">
+          <span className="usage-label">All time</span>
+          <span className="usage-value">
+            {usageStats ? `$${parseFloat(usageStats.total_cost || 0).toFixed(3)}` : '—'}
+          </span>
+        </div>
+        <div className="usage-divider" />
+        <div className="usage-stat">
+          <span className="usage-label">Total calls</span>
+          <span className="usage-value">{usageStats?.total_calls || 0}</span>
+        </div>
       </div>
 
       {/* Messages or starter prompts */}
@@ -226,6 +364,18 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
         </button>
       </div>
       <div className="ai-input-hint">Press Enter to send · Shift+Enter for new line</div>
+
+      {emailSuccess && (
+        <div className="email-success-toast">{emailSuccess}</div>
+      )}
+
+      {showEmail && (
+        <EmailModal
+          onClose={() => setShowEmail(false)}
+          onSend={sendEmail}
+          sending={emailSending}
+        />
+      )}
     </div>
   );
 }

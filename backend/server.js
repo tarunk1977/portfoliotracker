@@ -35,6 +35,15 @@ async function initDB() {
     );
     CREATE INDEX IF NOT EXISTS idx_transactions_ticker ON transactions(ticker);
     CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
+
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      id SERIAL PRIMARY KEY,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd NUMERIC(10,6) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage(created_at);
   `);
   console.log('DB initialized');
 }
@@ -265,9 +274,114 @@ app.post('/api/ai/chat', async (req, res) => {
       ?.map(b => b.text)
       ?.join('\n') || 'No response generated.';
 
-    res.json({ text });
+    // Return usage stats (input @ $3/M, output @ $15/M for claude-sonnet-4-5)
+    const usage = data.usage || {};
+    const inputTokens = usage.input_tokens || 0;
+    const outputTokens = usage.output_tokens || 0;
+    const costUSD = (inputTokens / 1_000_000 * 3) + (outputTokens / 1_000_000 * 15);
+
+    // Persist to DB
+    await pool.query(
+      `INSERT INTO ai_usage (input_tokens, output_tokens, cost_usd) VALUES ($1, $2, $3)`,
+      [inputTokens, outputTokens, costUSD]
+    );
+
+    res.json({ text, usage: { input_tokens: inputTokens, output_tokens: outputTokens, cost_usd: costUSD } });
   } catch (e) {
     console.error('AI proxy error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/ai/email - email chat transcript
+app.post('/api/ai/email', async (req, res) => {
+  const { to, messages, summary } = req.body;
+  if (!to || !messages?.length) return res.status(400).json({ error: 'to and messages required' });
+
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+  if (!gmailUser || !gmailPass) return res.status(500).json({ error: 'Email not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to backend environment variables.' });
+
+  try {
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: gmailUser, pass: gmailPass },
+    });
+
+    // Build plain text version
+    const textBody = messages.map(m =>
+      `${m.role === 'user' ? '👤 You' : '✨ Folio AI'}:\n${m.content}`
+    ).join('\n\n---\n\n');
+
+    // Build HTML version
+    const htmlMessages = messages.map(m => {
+      const isUser = m.role === 'user';
+      const content = m.content
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^## (.*$)/gm, '<h3 style="color:#6c63ff;margin:12px 0 4px">$1</h3>')
+        .replace(/^- (.*$)/gm, '<li style="margin:3px 0">$1</li>')
+        .replace(/\n/g, '<br>');
+      return `
+        <div style="margin:16px 0;display:flex;flex-direction:${isUser ? 'row-reverse' : 'row'};gap:12px;align-items:flex-start">
+          <div style="font-size:20px">${isUser ? '👤' : '✨'}</div>
+          <div style="background:${isUser ? '#1a1060' : '#1a1d27'};border:1px solid #2a2d3d;border-radius:12px;padding:12px 16px;max-width:80%;font-size:13px;line-height:1.6;color:#e8eaf0">
+            ${content}
+          </div>
+        </div>`;
+    }).join('');
+
+    const now = new Date().toLocaleString('en-CA', { dateStyle: 'full', timeStyle: 'short' });
+
+    const html = `
+      <div style="font-family:'Segoe UI',sans-serif;background:#0d0f14;padding:24px;border-radius:12px;max-width:700px;margin:0 auto">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #2a2d3d">
+          <span style="font-size:22px">📈</span>
+          <div>
+            <div style="font-size:18px;font-weight:600;color:#8b84ff">Folio AI Advisor</div>
+            <div style="font-size:12px;color:#7b7f94">Chat exported on ${now}</div>
+          </div>
+        </div>
+        ${summary ? `
+        <div style="background:#1a1d27;border:1px solid #2a2d3d;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:12px;color:#7b7f94">
+          <strong style="color:#e8eaf0">Portfolio at time of chat:</strong> 
+          Value ${summary.total_value} · Invested ${summary.total_cost} · Return ${summary.total_gain_loss} (${summary.total_gain_loss_pct})
+        </div>` : ''}
+        ${htmlMessages}
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #2a2d3d;font-size:11px;color:#7b7f94;text-align:center">
+          Exported from Folio · AI insights are for informational purposes only and not professional financial advice.
+        </div>
+      </div>`;
+
+    await transporter.sendMail({
+      from: `Folio Portfolio Tracker <${gmailUser}>`,
+      to,
+      subject: `Folio AI Advisor Chat — ${new Date().toLocaleDateString('en-CA')}`,
+      text: textBody,
+      html,
+    });
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Email error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/ai/usage - lifetime + monthly stats
+app.get('/api/ai/usage', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        SUM(cost_usd) AS total_cost,
+        SUM(input_tokens + output_tokens) AS total_tokens,
+        SUM(CASE WHEN DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW()) THEN cost_usd ELSE 0 END) AS month_cost,
+        SUM(CASE WHEN DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW()) THEN input_tokens + output_tokens ELSE 0 END) AS month_tokens,
+        COUNT(*) AS total_calls
+      FROM ai_usage
+    `);
+    res.json(rows[0]);
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });

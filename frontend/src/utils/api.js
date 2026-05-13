@@ -23,4 +23,5 @@ export const api = {
     form.append('file', file);
     return fetch(`${BASE}/api/import-csv`, { method: 'POST', body: form }).then(r => r.json());
   },
+  getAIUsage: () => request('/api/ai/usage'),
 };
