@@ -298,23 +298,13 @@ app.post('/api/ai/email', async (req, res) => {
   const { to, messages, summary } = req.body;
   if (!to || !messages?.length) return res.status(400).json({ error: 'to and messages required' });
 
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailPass = process.env.GMAIL_APP_PASSWORD;
-  if (!gmailUser || !gmailPass) return res.status(500).json({ error: 'Email not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to backend environment variables.' });
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return res.status(500).json({ error: 'Email not configured. Add RESEND_API_KEY to backend environment variables.' });
 
   try {
-    const nodemailer = require('nodemailer');
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: gmailUser, pass: gmailPass },
-    });
+    const fetch = require('node-fetch');
 
-    // Build plain text version
-    const textBody = messages.map(m =>
-      `${m.role === 'user' ? '👤 You' : '✨ Folio AI'}:\n${m.content}`
-    ).join('\n\n---\n\n');
-
-    // Build HTML version
+    // Build HTML
     const htmlMessages = messages.map(m => {
       const isUser = m.role === 'user';
       const content = m.content
@@ -323,7 +313,7 @@ app.post('/api/ai/email', async (req, res) => {
         .replace(/^- (.*$)/gm, '<li style="margin:3px 0">$1</li>')
         .replace(/\n/g, '<br>');
       return `
-        <div style="margin:16px 0;display:flex;flex-direction:${isUser ? 'row-reverse' : 'row'};gap:12px;align-items:flex-start">
+        <div style="margin:16px 0;display:flex;gap:12px;align-items:flex-start;flex-direction:${isUser ? 'row-reverse' : 'row'}">
           <div style="font-size:20px">${isUser ? '👤' : '✨'}</div>
           <div style="background:${isUser ? '#1a1060' : '#1a1d27'};border:1px solid #2a2d3d;border-radius:12px;padding:12px 16px;max-width:80%;font-size:13px;line-height:1.6;color:#e8eaf0">
             ${content}
@@ -332,7 +322,6 @@ app.post('/api/ai/email', async (req, res) => {
     }).join('');
 
     const now = new Date().toLocaleString('en-CA', { dateStyle: 'full', timeStyle: 'short' });
-
     const html = `
       <div style="font-family:'Segoe UI',sans-serif;background:#0d0f14;padding:24px;border-radius:12px;max-width:700px;margin:0 auto">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #2a2d3d">
@@ -344,7 +333,7 @@ app.post('/api/ai/email', async (req, res) => {
         </div>
         ${summary ? `
         <div style="background:#1a1d27;border:1px solid #2a2d3d;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:12px;color:#7b7f94">
-          <strong style="color:#e8eaf0">Portfolio at time of chat:</strong> 
+          <strong style="color:#e8eaf0">Portfolio at time of chat:</strong>
           Value ${summary.total_value} · Invested ${summary.total_cost} · Return ${summary.total_gain_loss} (${summary.total_gain_loss_pct})
         </div>` : ''}
         ${htmlMessages}
@@ -353,13 +342,22 @@ app.post('/api/ai/email', async (req, res) => {
         </div>
       </div>`;
 
-    await transporter.sendMail({
-      from: `Folio Portfolio Tracker <${gmailUser}>`,
-      to,
-      subject: `Folio AI Advisor Chat — ${new Date().toLocaleDateString('en-CA')}`,
-      text: textBody,
-      html,
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({
+        from: 'Folio <onboarding@resend.dev>',
+        to: [to],
+        subject: `Folio AI Advisor Chat — ${new Date().toLocaleDateString('en-CA')}`,
+        html,
+      }),
     });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Email send failed');
 
     res.json({ success: true });
   } catch (e) {
