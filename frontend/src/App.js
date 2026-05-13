@@ -6,6 +6,7 @@ import { HoldingsTable } from './components/HoldingsTable';
 import { AllocationChart, GainLossChart } from './components/Charts';
 import { CSVImport } from './components/CSVImport';
 import { TransactionsPage } from './components/TransactionsPage';
+import { AIAdvisor } from './components/AIAdvisor';
 import './App.css';
 
 export default function App() {
@@ -62,6 +63,9 @@ export default function App() {
               <button className={`tab ${activeTab === 'holdings' ? 'active' : ''}`} onClick={() => setActiveTab('holdings')}>Holdings</button>
               <button className={`tab ${activeTab === 'charts' ? 'active' : ''}`} onClick={() => setActiveTab('charts')}>Charts</button>
               <button className={`tab ${activeTab === 'transactions' ? 'active' : ''}`} onClick={() => setActiveTab('transactions')}>Transactions</button>
+              <button className={`tab ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => setActiveTab('ai')}>
+                ✨ AI Advisor
+              </button>
             </div>
 
             {activeTab === 'holdings' && (
@@ -77,6 +81,10 @@ export default function App() {
 
             {activeTab === 'transactions' && (
               <TransactionsPage holdings={data?.holdings} onTradeLogged={refresh} />
+            )}
+
+            {activeTab === 'ai' && (
+              <AIAdvisor holdings={data?.holdings} summary={data?.summary} />
             )}
           </>
         )}
