@@ -68,24 +68,24 @@ export default function App() {
               </button>
             </div>
 
-            {activeTab === 'holdings' && (
+            <div style={{ display: activeTab === 'holdings' ? 'block' : 'none' }}>
               <HoldingsTable holdings={data?.holdings} />
-            )}
+            </div>
 
-            {activeTab === 'charts' && (
+            <div style={{ display: activeTab === 'charts' ? 'block' : 'none' }}>
               <div className="charts-grid">
                 <AllocationChart holdings={data?.holdings} />
                 <GainLossChart holdings={data?.holdings} />
               </div>
-            )}
+            </div>
 
-            {activeTab === 'transactions' && (
+            <div style={{ display: activeTab === 'transactions' ? 'block' : 'none' }}>
               <TransactionsPage holdings={data?.holdings} onTradeLogged={refresh} />
-            )}
+            </div>
 
-            {activeTab === 'ai' && (
+            <div style={{ display: activeTab === 'ai' ? 'block' : 'none' }}>
               <AIAdvisor holdings={data?.holdings} summary={data?.summary} />
-            )}
+            </div>
           </>
         )}
       </main>
