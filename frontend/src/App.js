@@ -4,6 +4,7 @@ import { usePortfolio } from './hooks/usePortfolio';
 import { SummaryCards } from './components/SummaryCards';
 import { HoldingsTable } from './components/HoldingsTable';
 import { AllocationChart, GainLossChart } from './components/Charts';
+import { PortfolioBeta } from './components/PortfolioBeta';
 import { CSVImport } from './components/CSVImport';
 import { TransactionsPage } from './components/TransactionsPage';
 import { AIAdvisor } from './components/AIAdvisor';
@@ -76,6 +77,9 @@ export default function App() {
               <div className="charts-grid">
                 <AllocationChart holdings={data?.holdings} />
                 <GainLossChart holdings={data?.holdings} />
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <PortfolioBeta />
               </div>
             </div>
 

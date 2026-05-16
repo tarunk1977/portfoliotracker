@@ -14,6 +14,7 @@ export const api = {
   getPortfolio: () => request('/api/portfolio'),
   getPrice: (ticker) => request(`/api/prices/${ticker}`),
   getHistory: (ticker, range) => request(`/api/history/${ticker}?range=${range}`),
+  getBeta: () => request('/api/beta'),
   addHolding: (data) => request('/api/holdings', { method: 'POST', body: JSON.stringify(data) }),
   updateHolding: (ticker, data) => request(`/api/holdings/${ticker}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteHolding: (ticker) => request(`/api/holdings/${ticker}`, { method: 'DELETE' }),

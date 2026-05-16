@@ -216,6 +216,85 @@ app.get('/api/history/:ticker', async (req, res) => {
   }
 });
 
+// GET /api/beta - portfolio beta vs SPY
+app.get('/api/beta', async (req, res) => {
+  try {
+    const fetch = require('node-fetch');
+    const holdings = await computeHoldings();
+    if (!holdings.length) return res.json({ portfolio_beta: null, holdings: [] });
+
+    // Fetch 1Y weekly prices for SPY + all holdings in parallel
+    async function fetchWeeklyReturns(ticker) {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1wk&range=1y`;
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const json = await r.json();
+      const closes = json.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+      // Convert to weekly returns
+      const returns = [];
+      for (let i = 1; i < closes.length; i++) {
+        if (closes[i] && closes[i - 1]) {
+          returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+        }
+      }
+      return returns;
+    }
+
+    // Calculate beta: cov(stock, market) / var(market)
+    function calcBeta(stockReturns, marketReturns) {
+      const n = Math.min(stockReturns.length, marketReturns.length);
+      if (n < 10) return null;
+      const sr = stockReturns.slice(0, n);
+      const mr = marketReturns.slice(0, n);
+      const meanS = sr.reduce((a, b) => a + b, 0) / n;
+      const meanM = mr.reduce((a, b) => a + b, 0) / n;
+      let cov = 0, varM = 0;
+      for (let i = 0; i < n; i++) {
+        cov += (sr[i] - meanS) * (mr[i] - meanM);
+        varM += (mr[i] - meanM) ** 2;
+      }
+      return varM === 0 ? null : parseFloat((cov / varM).toFixed(3));
+    }
+
+    // Fetch SPY + all tickers in parallel
+    const tickers = ['SPY', ...holdings.map(h => h.ticker)];
+    const returnsMap = {};
+    await Promise.all(tickers.map(async t => {
+      try { returnsMap[t] = await fetchWeeklyReturns(t); }
+      catch { returnsMap[t] = []; }
+    }));
+
+    const spyReturns = returnsMap['SPY'];
+
+    // Get total portfolio value for weighting
+    const enrichedHoldings = await Promise.all(holdings.map(async h => {
+      const price = await fetchPrice(h.ticker);
+      const marketValue = price?.price ? price.price * h.shares : h.avg_cost * h.shares;
+      const beta = calcBeta(returnsMap[h.ticker] || [], spyReturns);
+      return { ticker: h.ticker, market_value: marketValue, beta };
+    }));
+
+    const totalValue = enrichedHoldings.reduce((s, h) => s + h.market_value, 0);
+
+    // Weighted portfolio beta
+    let portfolioBeta = 0;
+    const holdingBetas = enrichedHoldings.map(h => {
+      const weight = totalValue > 0 ? h.market_value / totalValue : 0;
+      if (h.beta !== null) portfolioBeta += weight * h.beta;
+      return { ticker: h.ticker, beta: h.beta, weight: parseFloat((weight * 100).toFixed(1)) };
+    });
+
+    res.json({
+      portfolio_beta: parseFloat(portfolioBeta.toFixed(3)),
+      spy_beta: 1.0,
+      holdings: holdingBetas,
+      interpretation: portfolioBeta < 0.8 ? 'Defensive' : portfolioBeta < 1.1 ? 'Market-like' : 'Aggressive',
+    });
+  } catch (e) {
+    console.error('Beta calc error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/transactions', async (req, res) => {
   const { ticker } = req.query;
   const query = ticker
