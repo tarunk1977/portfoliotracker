@@ -162,6 +162,60 @@ app.get('/api/prices/:ticker', async (req, res) => {
   res.json(data);
 });
 
+// GET /api/history/:ticker?range=1mo
+app.get('/api/history/:ticker', async (req, res) => {
+  const ticker = req.params.ticker.toUpperCase();
+  const range = req.query.range || '1mo';
+
+  // Map range to Yahoo Finance params
+  const rangeMap = {
+    '1W':  { range: '5d',  interval: '1d' },
+    '1M':  { range: '1mo', interval: '1d' },
+    '3M':  { range: '3mo', interval: '1d' },
+    '6M':  { range: '6mo', interval: '1wk' },
+    'YTD': { range: 'ytd', interval: '1d' },
+    '1Y':  { range: '1y',  interval: '1wk' },
+  };
+
+  const params = rangeMap[range] || rangeMap['1M'];
+
+  try {
+    const fetch = require('node-fetch');
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=${params.interval}&range=${params.range}`;
+    const result = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const json = await result.json();
+    const chart = json.chart?.result?.[0];
+    if (!chart) return res.status(404).json({ error: 'No history found' });
+
+    const timestamps = chart.timestamp || [];
+    const closes = chart.indicators?.quote?.[0]?.close || [];
+    const meta = chart.meta;
+
+    const points = timestamps
+      .map((ts, i) => ({
+        date: new Date(ts * 1000).toISOString().split('T')[0],
+        price: closes[i] ? parseFloat(closes[i].toFixed(4)) : null,
+      }))
+      .filter(p => p.price !== null);
+
+    res.json({
+      ticker,
+      name: meta.longName || meta.shortName || ticker,
+      currency: meta.currency,
+      range,
+      points,
+      start_price: points[0]?.price || null,
+      end_price: points[points.length - 1]?.price || null,
+      change_pct: points.length > 1
+        ? ((points[points.length - 1].price - points[0].price) / points[0].price) * 100
+        : null,
+    });
+  } catch (e) {
+    console.error(`History fetch failed for ${ticker}:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/transactions', async (req, res) => {
   const { ticker } = req.query;
   const query = ticker
