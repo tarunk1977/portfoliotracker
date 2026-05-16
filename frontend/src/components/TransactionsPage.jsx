@@ -135,9 +135,14 @@ export function TransactionsPage({ holdings, onTradeLogged }) {
 
   async function handleDelete(id) {
     if (!window.confirm('Delete this transaction? Holdings will be recalculated.')) return;
-    await api.request(`/api/transactions/${id}`, { method: 'DELETE' });
-    await load();
-    onTradeLogged?.();
+    try {
+      const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+      await fetch(`${BASE}/api/transactions/${id}`, { method: 'DELETE' });
+      await load();
+      onTradeLogged?.();
+    } catch (e) {
+      console.error('Delete failed:', e);
+    }
   }
 
   async function handleSave() {
