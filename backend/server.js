@@ -81,6 +81,27 @@ async function fetchPrice(ticker) {
   }
 }
 
+// Fetch sector/profile info from Yahoo Finance quote summary
+const sectorCache = new Map();
+async function fetchSector(ticker) {
+  if (sectorCache.has(ticker)) return sectorCache.get(ticker);
+  try {
+    const fetch = require('node-fetch');
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=assetProfile,summaryDetail`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const json = await res.json();
+    const profile = json.quoteSummary?.result?.[0]?.assetProfile;
+    const data = {
+      sector: profile?.sector || 'Other',
+      industry: profile?.industry || 'Other',
+    };
+    sectorCache.set(ticker, data);
+    return data;
+  } catch (e) {
+    return { sector: 'Other', industry: 'Other' };
+  }
+}
+
 // Compute holdings by replaying all transactions
 async function computeHoldings() {
   const { rows } = await pool.query(
@@ -212,6 +233,106 @@ app.get('/api/history/:ticker', async (req, res) => {
     });
   } catch (e) {
     console.error(`History fetch failed for ${ticker}:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/sectors - sector breakdown by portfolio value
+app.get('/api/sectors', async (req, res) => {
+  try {
+    const holdings = await computeHoldings();
+    if (!holdings.length) return res.json({ sectors: [], industries: [] });
+
+    const enriched = await Promise.all(holdings.map(async h => {
+      const [price, sector] = await Promise.all([fetchPrice(h.ticker), fetchSector(h.ticker)]);
+      const marketValue = price?.price ? price.price * h.shares : h.avg_cost * h.shares;
+      return {
+        ticker: h.ticker,
+        name: price?.name || h.ticker,
+        market_value: marketValue,
+        sector: sector.sector,
+        industry: sector.industry,
+      };
+    }));
+
+    const totalValue = enriched.reduce((s, h) => s + h.market_value, 0);
+
+    // Group by sector
+    const sectorMap = {};
+    for (const h of enriched) {
+      if (!sectorMap[h.sector]) sectorMap[h.sector] = { sector: h.sector, value: 0, holdings: [] };
+      sectorMap[h.sector].value += h.market_value;
+      sectorMap[h.sector].holdings.push({ ticker: h.ticker, name: h.name, value: h.market_value, industry: h.industry });
+    }
+
+    const sectors = Object.values(sectorMap)
+      .map(s => ({ ...s, pct: parseFloat(((s.value / totalValue) * 100).toFixed(1)) }))
+      .sort((a, b) => b.value - a.value);
+
+    res.json({ sectors, total_value: totalValue });
+  } catch (e) {
+    console.error('Sector error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/bestworst - best and worst single days across all holdings
+app.get('/api/bestworst', async (req, res) => {
+  try {
+    const fetch = require('node-fetch');
+    const holdings = await computeHoldings();
+    if (!holdings.length) return res.json({ best: [], worst: [] });
+
+    // Fetch 1Y daily data for all holdings
+    const allDays = [];
+    await Promise.all(holdings.map(async h => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${h.ticker}?interval=1d&range=1y`;
+        const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const json = await r.json();
+        const chart = json.chart?.result?.[0];
+        if (!chart) return;
+
+        const timestamps = chart.timestamp || [];
+        const closes = chart.indicators?.quote?.[0]?.close || [];
+        const opens = chart.indicators?.quote?.[0]?.open || [];
+
+        for (let i = 1; i < timestamps.length; i++) {
+          if (!closes[i] || !closes[i - 1]) continue;
+          const changePct = ((closes[i] - closes[i - 1]) / closes[i - 1]) * 100;
+          const dollarChange = (closes[i] - closes[i - 1]) * h.shares;
+          allDays.push({
+            ticker: h.ticker,
+            date: new Date(timestamps[i] * 1000).toISOString().split('T')[0],
+            close: parseFloat(closes[i].toFixed(2)),
+            change_pct: parseFloat(changePct.toFixed(2)),
+            dollar_change: parseFloat(dollarChange.toFixed(2)),
+          });
+        }
+      } catch (e) { /* skip */ }
+    }));
+
+    // Sort by % change
+    const sorted = allDays.sort((a, b) => b.change_pct - a.change_pct);
+    const best = sorted.slice(0, 10);
+    const worst = sorted.slice(-10).reverse();
+
+    // Also compute best/worst portfolio days (sum across all holdings per date)
+    const portfolioDays = {};
+    for (const d of allDays) {
+      if (!portfolioDays[d.date]) portfolioDays[d.date] = { date: d.date, dollar_change: 0 };
+      portfolioDays[d.date].dollar_change += d.dollar_change;
+    }
+    const portfolioSorted = Object.values(portfolioDays).sort((a, b) => b.dollar_change - a.dollar_change);
+
+    res.json({
+      best_days: best,
+      worst_days: worst,
+      best_portfolio_days: portfolioSorted.slice(0, 5),
+      worst_portfolio_days: portfolioSorted.slice(-5).reverse(),
+    });
+  } catch (e) {
+    console.error('Best/worst error:', e);
     res.status(500).json({ error: e.message });
   }
 });

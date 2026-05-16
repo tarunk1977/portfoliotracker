@@ -832,3 +832,49 @@ body {
   font-size: 10px;
   color: var(--muted);
 }
+
+/* ── Sector Breakdown ────────────────────────────────── */
+.sector-layout { display: flex; gap: 12px; align-items: flex-start; }
+.sector-list { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.sector-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sector-row:hover, .sector-row.expanded { background: var(--card2); }
+.sector-row-left { display: flex; align-items: center; gap: 8px; }
+.sector-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.sector-name { font-size: 13px; font-weight: 500; }
+.sector-row-right { display: flex; align-items: center; gap: 12px; }
+.sector-pct { font-size: 12px; font-weight: 600; font-family: 'DM Mono', monospace; color: var(--text); }
+.sector-value { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; }
+.sector-holdings { padding: 4px 10px 8px 28px; display: flex; flex-direction: column; gap: 5px; }
+.sector-holding-row { display: flex; align-items: center; gap: 8px; }
+
+/* ── Best / Worst Days ───────────────────────────────── */
+.bestworst-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.bestworst-col { display: flex; flex-direction: column; gap: 4px; }
+.bestworst-header {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+.bestworst-header.best { color: #22c55e; background: rgba(34,197,94,0.08); }
+.bestworst-header.worst { color: #ef4444; background: rgba(239,68,68,0.08); }
+.day-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.day-row:hover { background: var(--card2); }
+.day-row-left { display: flex; align-items: center; gap: 8px; }
+.day-row-right { display: flex; align-items: center; gap: 10px; }
+.day-date { font-size: 11px; color: var(--muted); }
+.day-pct { font-size: 12px; font-weight: 600; font-family: 'DM Mono', monospace; }
+.day-dollar { font-size: 11px; font-family: 'DM Mono', monospace; }
