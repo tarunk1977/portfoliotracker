@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Upload, RefreshCw, TrendingUp, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Upload, RefreshCw, TrendingUp, Clock, Sun, Moon } from 'lucide-react';
 import { usePortfolio } from './hooks/usePortfolio';
 import { SummaryCards } from './components/SummaryCards';
 import { HoldingsTable } from './components/HoldingsTable';
@@ -17,6 +17,14 @@ export default function App() {
   const [showCSV, setShowCSV] = useState(false);
   const [activeTab, setActiveTab] = useState('holdings');
 
+  // Theme toggle - persisted to localStorage
+  const [theme, setTheme] = useState(() => localStorage.getItem('folio-theme') || 'dark');
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('folio-theme', theme);
+  }, [theme]);
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+
   const timeStr = lastUpdated?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
@@ -33,6 +41,9 @@ export default function App() {
                 <Clock size={13} /> {timeStr}
               </span>
             )}
+            <button className="btn-ghost" onClick={toggleTheme} title="Toggle theme">
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
             <button className="btn-ghost" onClick={refresh} title="Refresh prices">
               <RefreshCw size={15} className={loading ? 'spin' : ''} />
             </button>

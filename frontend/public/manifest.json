@@ -1,0 +1,32 @@
+{
+  "short_name": "Folio",
+  "name": "Folio Portfolio Tracker",
+  "description": "Track your investment portfolio with live prices and AI insights",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#6c63ff",
+  "background_color": "#0d0f14",
+  "categories": ["finance", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Holdings",
+      "url": "/",
+      "description": "View your portfolio holdings"
+    }
+  ]
+}

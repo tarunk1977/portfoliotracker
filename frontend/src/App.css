@@ -18,6 +18,23 @@
   --amber: #f59e0b;
 }
 
+/* Light mode overrides */
+[data-theme="light"] {
+  --bg: #f4f5f7;
+  --bg2: #ffffff;
+  --card: #ffffff;
+  --card2: #f0f1f5;
+  --border: #e2e4eb;
+  --border2: #d0d3de;
+  --text: #1a1d27;
+  --muted: #6b7080;
+  --accent: #6c63ff;
+  --accent2: #5a52e8;
+  --green: #16a34a;
+  --red: #dc2626;
+  --amber: #d97706;
+}
+
 body {
   font-family: 'DM Sans', sans-serif;
   background: var(--bg);
@@ -25,6 +42,7 @@ body {
   min-height: 100vh;
   font-size: 14px;
   line-height: 1.5;
+  transition: background 0.2s, color 0.2s;
 }
 
 /* ── Header ─────────────────────────────────────────── */
