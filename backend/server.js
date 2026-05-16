@@ -237,6 +237,60 @@ app.get('/api/history/:ticker', async (req, res) => {
   }
 });
 
+// GET /api/calendar - monthly performance heatmap
+app.get('/api/calendar', async (req, res) => {
+  try {
+    const fetch = require('node-fetch');
+    const holdings = await computeHoldings();
+    if (!holdings.length) return res.json({ months: [] });
+
+    // Fetch 2Y monthly data for all holdings
+    const monthlyData = {};
+
+    await Promise.all(holdings.map(async h => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${h.ticker}?interval=1mo&range=2y`;
+        const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const json = await r.json();
+        const chart = json.chart?.result?.[0];
+        if (!chart) return;
+
+        const timestamps = chart.timestamp || [];
+        const closes = chart.indicators?.quote?.[0]?.close || [];
+
+        for (let i = 1; i < timestamps.length; i++) {
+          if (!closes[i] || !closes[i - 1]) continue;
+          const date = new Date(timestamps[i] * 1000);
+          const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const changePct = ((closes[i] - closes[i - 1]) / closes[i - 1]) * 100;
+          const dollarChange = (closes[i] - closes[i - 1]) * h.shares;
+
+          if (!monthlyData[key]) monthlyData[key] = { key, dollar_change: 0, weighted_pct: 0, count: 0 };
+          monthlyData[key].dollar_change += dollarChange;
+          monthlyData[key].weighted_pct += changePct;
+          monthlyData[key].count++;
+        }
+      } catch (e) { /* skip */ }
+    }));
+
+    // Compute avg pct across holdings per month
+    const months = Object.values(monthlyData)
+      .map(m => ({
+        key: m.key,
+        year: parseInt(m.key.split('-')[0]),
+        month: parseInt(m.key.split('-')[1]),
+        dollar_change: parseFloat(m.dollar_change.toFixed(2)),
+        avg_pct: parseFloat((m.weighted_pct / m.count).toFixed(2)),
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+
+    res.json({ months });
+  } catch (e) {
+    console.error('Calendar error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/sectors - sector breakdown by portfolio value
 app.get('/api/sectors', async (req, res) => {
   try {

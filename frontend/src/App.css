@@ -955,3 +955,78 @@ body {
   text-align: right;
   opacity: 0.6;
 }
+
+/* ── Performance Calendar ────────────────────────────── */
+.perf-calendar-card { overflow-x: auto; }
+.cal-summary {
+  display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.cal-chip {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.cal-chip-label { font-size: 11px; color: var(--muted); }
+.cal-chip-val { font-size: 13px; font-weight: 600; font-family: 'DM Mono', monospace; }
+.cal-wrap { min-width: 520px; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: 44px repeat(12, 1fr) 56px;
+  gap: 3px;
+  margin-bottom: 3px;
+}
+.cal-year-label {
+  font-size: 12px; font-weight: 600;
+  color: var(--muted);
+  display: flex; align-items: center;
+  font-family: 'DM Mono', monospace;
+}
+.cal-month-header {
+  font-size: 10px; text-align: center;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: 4px;
+}
+.cal-ytd-header {
+  font-size: 10px; text-align: center;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: 4px;
+}
+.cal-cell {
+  border-radius: 5px;
+  padding: 6px 2px;
+  text-align: center;
+  font-size: 10px;
+  font-family: 'DM Mono', monospace;
+  font-weight: 500;
+  cursor: default;
+  transition: opacity 0.15s;
+  min-height: 32px;
+  display: flex; align-items: center; justify-content: center;
+}
+.cal-cell:hover { opacity: 0.85; }
+.cal-ytd-cell { font-size: 10px; font-weight: 600; border-radius: 6px; }
+.cal-tooltip {
+  display: flex; gap: 12px; align-items: center;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+}
+.cal-legend {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 14px;
+  font-size: 11px;
+}
+.cal-legend-cell {
+  width: 20px; height: 16px;
+  border-radius: 3px;
+}
