@@ -896,3 +896,62 @@ body {
 .day-date { font-size: 11px; color: var(--muted); }
 .day-pct { font-size: 12px; font-weight: 600; font-family: 'DM Mono', monospace; }
 .day-dollar { font-size: 11px; font-family: 'DM Mono', monospace; }
+
+/* ── Mobile Holding Cards ────────────────────────────── */
+.holdings-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.holding-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.holding-card:active { background: var(--card2); border-color: var(--accent); }
+.hcard-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.hcard-left { display: flex; flex-direction: column; gap: 4px; }
+.hcard-name { font-size: 12px; color: var(--muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hcard-right { text-align: right; }
+.hcard-value { font-size: 18px; font-weight: 600; font-family: 'DM Mono', monospace; }
+.hcard-return {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 13px; font-weight: 600;
+  font-family: 'DM Mono', monospace;
+  margin-top: 2px;
+}
+.hcard-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  background: var(--card2);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.hcard-stat { display: flex; flex-direction: column; gap: 2px; }
+.hcard-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.hcard-stat-value { font-size: 12px; font-family: 'DM Mono', monospace; font-weight: 500; }
+.hcard-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hcard-invested, .hcard-gainloss { display: flex; flex-direction: column; gap: 2px; }
+.hcard-tap-hint {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+  opacity: 0.6;
+}
