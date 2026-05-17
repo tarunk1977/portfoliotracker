@@ -14,6 +14,41 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const JWT_SECRET = process.env.JWT_SECRET || 'folio-dev-secret-change-in-prod';
+const APP_PASSWORD_HASH = process.env.APP_PASSWORD_HASH; // bcrypt hash of your password
+
+// Middleware — verify JWT on all /api routes except /api/login
+function requireAuth(req, res, next) {
+  if (!APP_PASSWORD_HASH) return next(); // auth disabled if no password set
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.user = jwt.verify(auth.slice(7), JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+// POST /api/login
+app.post('/api/login', async (req, res) => {
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: 'Password required' });
+  if (!APP_PASSWORD_HASH) return res.status(500).json({ error: 'Auth not configured. Add APP_PASSWORD_HASH to environment.' });
+
+  const valid = await bcrypt.compare(password, APP_PASSWORD_HASH);
+  if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+
+  const token = jwt.sign({ role: 'owner' }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ token });
+});
+
+// Health check (public)
+app.get('/health', (req, res) => res.json({ status: 'ok', auth: !!APP_PASSWORD_HASH }));
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -134,9 +169,7 @@ async function computeHoldings() {
 }
 
 // Routes
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-app.get('/api/portfolio', async (req, res) => {
+app.get('/api/portfolio', requireAuth, async (req, res) => {
   try {
     const holdings = await computeHoldings();
     const enriched = await Promise.all(holdings.map(async (h) => {
@@ -177,14 +210,14 @@ app.get('/api/portfolio', async (req, res) => {
   }
 });
 
-app.get('/api/prices/:ticker', async (req, res) => {
+app.get('/api/prices/:ticker', requireAuth, async (req, res) => {
   const data = await fetchPrice(req.params.ticker.toUpperCase());
   if (!data) return res.status(404).json({ error: 'Ticker not found' });
   res.json(data);
 });
 
 // GET /api/history/:ticker?range=1mo
-app.get('/api/history/:ticker', async (req, res) => {
+app.get('/api/history/:ticker', requireAuth, async (req, res) => {
   const ticker = req.params.ticker.toUpperCase();
   const range = req.query.range || '1mo';
 
@@ -238,7 +271,7 @@ app.get('/api/history/:ticker', async (req, res) => {
 });
 
 // GET /api/calendar - monthly performance heatmap
-app.get('/api/calendar', async (req, res) => {
+app.get('/api/calendar', requireAuth, async (req, res) => {
   try {
     const fetch = require('node-fetch');
     const holdings = await computeHoldings();
@@ -292,7 +325,7 @@ app.get('/api/calendar', async (req, res) => {
 });
 
 // GET /api/sectors - sector breakdown by portfolio value
-app.get('/api/sectors', async (req, res) => {
+app.get('/api/sectors', requireAuth, async (req, res) => {
   try {
     const holdings = await computeHoldings();
     if (!holdings.length) return res.json({ sectors: [], industries: [] });
@@ -331,7 +364,7 @@ app.get('/api/sectors', async (req, res) => {
 });
 
 // GET /api/bestworst - best and worst single days across all holdings
-app.get('/api/bestworst', async (req, res) => {
+app.get('/api/bestworst', requireAuth, async (req, res) => {
   try {
     const fetch = require('node-fetch');
     const holdings = await computeHoldings();
@@ -392,7 +425,7 @@ app.get('/api/bestworst', async (req, res) => {
 });
 
 // GET /api/beta - portfolio beta vs SPY
-app.get('/api/beta', async (req, res) => {
+app.get('/api/beta', requireAuth, async (req, res) => {
   try {
     const fetch = require('node-fetch');
     const holdings = await computeHoldings();
@@ -470,7 +503,7 @@ app.get('/api/beta', async (req, res) => {
   }
 });
 
-app.get('/api/transactions', async (req, res) => {
+app.get('/api/transactions', requireAuth, async (req, res) => {
   const { ticker } = req.query;
   const query = ticker
     ? `SELECT * FROM transactions WHERE ticker=$1 ORDER BY date DESC, created_at DESC`
@@ -480,7 +513,7 @@ app.get('/api/transactions', async (req, res) => {
   res.json(rows);
 });
 
-app.post('/api/transactions', async (req, res) => {
+app.post('/api/transactions', requireAuth, async (req, res) => {
   const { ticker, type, shares, price, date, notes, currency = 'USD' } = req.body;
   if (!ticker || !type || !shares || !price || !date) {
     return res.status(400).json({ error: 'ticker, type, shares, price, date required' });
@@ -508,12 +541,12 @@ app.post('/api/transactions', async (req, res) => {
   res.json({ transaction: rows[0], message: `${type.toUpperCase()} logged and holdings updated` });
 });
 
-app.delete('/api/transactions/:id', async (req, res) => {
+app.delete('/api/transactions/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM transactions WHERE id=$1', [req.params.id]);
   res.json({ success: true });
 });
 
-app.post('/api/import-csv', upload.single('file'), async (req, res) => {
+app.post('/api/import-csv', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   try {
     const content = req.file.buffer.toString('utf-8');
@@ -547,7 +580,7 @@ app.post('/api/import-csv', upload.single('file'), async (req, res) => {
 });
 
 // POST /api/ai/chat - proxy to Anthropic API (keeps API key server-side)
-app.post('/api/ai/chat', async (req, res) => {
+app.post('/api/ai/chat', requireAuth, async (req, res) => {
   const { messages, systemPrompt } = req.body;
   if (!messages?.length) return res.status(400).json({ error: 'messages required' });
 
@@ -602,7 +635,7 @@ app.post('/api/ai/chat', async (req, res) => {
 });
 
 // POST /api/ai/email - email chat transcript
-app.post('/api/ai/email', async (req, res) => {
+app.post('/api/ai/email', requireAuth, async (req, res) => {
   const { to, messages, summary } = req.body;
   if (!to || !messages?.length) return res.status(400).json({ error: 'to and messages required' });
 
@@ -675,7 +708,7 @@ app.post('/api/ai/email', async (req, res) => {
 });
 
 // GET /api/ai/usage - lifetime + monthly stats
-app.get('/api/ai/usage', async (req, res) => {
+app.get('/api/ai/usage', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT

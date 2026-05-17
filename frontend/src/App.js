@@ -11,12 +11,23 @@ import { PerformanceCalendar } from './components/PerformanceCalendar';
 import { CSVImport } from './components/CSVImport';
 import { TransactionsPage } from './components/TransactionsPage';
 import { AIAdvisor } from './components/AIAdvisor';
+import { LoginPage } from './components/LoginPage';
 import './App.css';
 
 export default function App() {
   const { data, loading, error, refresh, lastUpdated } = usePortfolio(60000);
   const [showCSV, setShowCSV] = useState(false);
   const [activeTab, setActiveTab] = useState('holdings');
+
+  // Auth
+  const [token, setToken] = useState(() => localStorage.getItem('folio-token'));
+  function handleLogout() {
+    localStorage.removeItem('folio-token');
+    setToken(null);
+  }
+
+  // Show login if no token
+  if (!token) return <LoginPage onLogin={setToken} />;
 
   // Theme toggle - persisted to localStorage
   const [theme, setTheme] = useState(() => localStorage.getItem('folio-theme') || 'dark');
@@ -47,6 +58,9 @@ export default function App() {
             </button>
             <button className="btn-ghost" onClick={refresh} title="Refresh prices">
               <RefreshCw size={15} className={loading ? 'spin' : ''} />
+            </button>
+            <button className="btn-ghost" onClick={handleLogout} title="Sign out" style={{ fontSize: 12 }}>
+              Sign out
             </button>
             <button className="btn-secondary" onClick={() => setShowCSV(true)}>
               <Upload size={15} /> Import CSV

@@ -1,10 +1,20 @@
 const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 export async function request(path, options = {}) {
+  const token = localStorage.getItem('folio-token');
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
     ...options,
   });
+  if (res.status === 401) {
+    localStorage.removeItem('folio-token');
+    window.location.reload();
+    return;
+  }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
