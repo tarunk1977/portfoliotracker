@@ -15,19 +15,15 @@ import { LoginPage } from './components/LoginPage';
 import './App.css';
 
 export default function App() {
-  const { data, loading, error, refresh, lastUpdated } = usePortfolio(60000);
   const [showCSV, setShowCSV] = useState(false);
   const [activeTab, setActiveTab] = useState('holdings');
 
-  // Auth
+  // Auth - must be before any conditional returns
   const [token, setToken] = useState(() => localStorage.getItem('folio-token'));
   function handleLogout() {
     localStorage.removeItem('folio-token');
     setToken(null);
   }
-
-  // Show login if no token
-  if (!token) return <LoginPage onLogin={setToken} />;
 
   // Theme toggle - persisted to localStorage
   const [theme, setTheme] = useState(() => localStorage.getItem('folio-theme') || 'dark');
@@ -36,6 +32,12 @@ export default function App() {
     localStorage.setItem('folio-theme', theme);
   }, [theme]);
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
+
+  // Portfolio data - only fetches when token exists
+  const { data, loading, error, refresh, lastUpdated } = usePortfolio(token ? 60000 : null);
+
+  // Show login if no token
+  if (!token) return <LoginPage onLogin={setToken} />;
 
   const timeStr = lastUpdated?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 

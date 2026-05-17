@@ -21,6 +21,7 @@ export function usePortfolio(refreshInterval = 60000) {
   }, []);
 
   useEffect(() => {
+    if (!refreshInterval) { setLoading(false); return; } // disabled
     load();
     const interval = setInterval(load, refreshInterval);
     return () => clearInterval(interval);
