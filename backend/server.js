@@ -541,6 +541,21 @@ app.post('/api/transactions', requireAuth, async (req, res) => {
   res.json({ transaction: rows[0], message: `${type.toUpperCase()} logged and holdings updated` });
 });
 
+app.put('/api/transactions/:id', requireAuth, async (req, res) => {
+  const { ticker, type, shares, price, date, notes, currency = 'USD' } = req.body;
+  if (!ticker || !type || !shares || !price || !date) {
+    return res.status(400).json({ error: 'ticker, type, shares, price, date required' });
+  }
+  const upper = ticker.toUpperCase().trim();
+  const { rows } = await pool.query(
+    `UPDATE transactions SET ticker=$1, type=$2, shares=$3, price=$4, currency=$5, date=$6, notes=$7
+     WHERE id=$8 RETURNING *`,
+    [upper, type.toUpperCase(), parseFloat(shares), parseFloat(price), currency, date, notes || null, req.params.id]
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Transaction not found' });
+  res.json({ transaction: rows[0] });
+});
+
 app.delete('/api/transactions/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM transactions WHERE id=$1', [req.params.id]);
   res.json({ success: true });

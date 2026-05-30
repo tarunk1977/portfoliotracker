@@ -1,16 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, X, TrendingUp, TrendingDown, Filter, Trash2 } from 'lucide-react';
+import { Plus, X, TrendingUp, TrendingDown, Filter, Trash2, Pencil } from 'lucide-react';
 import { api } from '../utils/api';
 import { fmt } from '../utils/format';
 
-// ── Add Transaction Modal ─────────────────────────────────────────────────
-function AddTransactionModal({ onClose, onSave, holdings }) {
-  const [type, setType] = useState('BUY');
-  const [ticker, setTicker] = useState('');
-  const [shares, setShares] = useState('');
-  const [price, setPrice] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [notes, setNotes] = useState('');
+// ── Add / Edit Transaction Modal ──────────────────────────────────────────
+function TransactionModal({ onClose, onSave, holdings, existing }) {
+  const editing = !!existing;
+  const [type, setType] = useState(existing?.type || 'BUY');
+  const [ticker, setTicker] = useState(existing?.ticker || '');
+  const [shares, setShares] = useState(existing?.shares || '');
+  const [price, setPrice] = useState(existing?.price || '');
+  const [date, setDate] = useState(
+    existing?.date
+      ? new Date(existing.date).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0]
+  );
+  const [notes, setNotes] = useState(existing?.notes || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -22,7 +27,19 @@ function AddTransactionModal({ onClose, onSave, holdings }) {
     setSaving(true);
     setError('');
     try {
-      await api.addTransaction({ ticker: ticker.toUpperCase(), type, shares: parseFloat(shares), price: parseFloat(price), date, notes });
+      const payload = { ticker: ticker.toUpperCase(), type, shares: parseFloat(shares), price: parseFloat(price), date, notes };
+      if (editing) {
+        const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+        const token = localStorage.getItem('folio_token');
+        const res = await fetch(`${BASE}/api/transactions/${existing.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Update failed'); }
+      } else {
+        await api.addTransaction(payload);
+      }
       onSave();
       onClose();
     } catch (e) {
@@ -36,7 +53,7 @@ function AddTransactionModal({ onClose, onSave, holdings }) {
     <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h2>Log Transaction</h2>
+          <h2>{editing ? 'Edit Transaction' : 'Log Transaction'}</h2>
           <button className="icon-btn" onClick={onClose}><X size={18} /></button>
         </div>
 
@@ -103,7 +120,7 @@ function AddTransactionModal({ onClose, onSave, holdings }) {
           <div className="modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Log Trade'}
+              {saving ? 'Saving…' : editing ? 'Save Changes' : 'Log Trade'}
             </button>
           </div>
         </form>
@@ -117,6 +134,7 @@ export function TransactionsPage({ holdings, onTradeLogged }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingTx, setEditingTx] = useState(null);
   const [filterTicker, setFilterTicker] = useState('ALL');
 
   const load = useCallback(async () => {
@@ -137,7 +155,11 @@ export function TransactionsPage({ holdings, onTradeLogged }) {
     if (!window.confirm('Delete this transaction? Holdings will be recalculated.')) return;
     try {
       const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-      await fetch(`${BASE}/api/transactions/${id}`, { method: 'DELETE' });
+      const token = localStorage.getItem('folio_token');
+      await fetch(`${BASE}/api/transactions/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
       await load();
       onTradeLogged?.();
     } catch (e) {
@@ -235,9 +257,14 @@ export function TransactionsPage({ holdings, onTradeLogged }) {
                     </td>
                     <td style={{ color: 'var(--muted)', fontSize: 12 }}>{t.notes || '—'}</td>
                     <td>
-                      <button className="icon-btn danger" onClick={() => handleDelete(t.id)} title="Delete transaction">
-                        <Trash2 size={13} />
-                      </button>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="icon-btn" onClick={() => setEditingTx(t)} title="Edit transaction">
+                          <Pencil size={13} />
+                        </button>
+                        <button className="icon-btn danger" onClick={() => handleDelete(t.id)} title="Delete transaction">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -248,9 +275,18 @@ export function TransactionsPage({ holdings, onTradeLogged }) {
       )}
 
       {showAdd && (
-        <AddTransactionModal
+        <TransactionModal
           onClose={() => setShowAdd(false)}
           onSave={handleSave}
+          holdings={holdings}
+        />
+      )}
+
+      {editingTx && (
+        <TransactionModal
+          existing={editingTx}
+          onClose={() => setEditingTx(null)}
+          onSave={() => { setEditingTx(null); handleSave(); }}
           holdings={holdings}
         />
       )}
