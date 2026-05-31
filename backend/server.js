@@ -722,6 +722,189 @@ app.post('/api/ai/email', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/alerts/run - daily morning alert (called by cron-job.org, secured by ALERTS_SECRET)
+app.post('/api/alerts/run', async (req, res) => {
+  const secret = process.env.ALERTS_SECRET;
+  if (!secret) return res.status(500).json({ error: 'ALERTS_SECRET not configured' });
+  if (req.headers['x-alerts-secret'] !== secret) return res.status(401).json({ error: 'Unauthorized' });
+
+  const alertEmail = process.env.ALERT_EMAIL;
+  if (!alertEmail) return res.status(500).json({ error: 'ALERT_EMAIL not configured' });
+
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return res.status(500).json({ error: 'RESEND_API_KEY not configured' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+
+  try {
+    const fetch = require('node-fetch');
+
+    // 1. Fetch holdings
+    const holdings = await computeHoldings();
+    if (!holdings.length) return res.json({ message: 'No holdings to analyse' });
+
+    // 2. Enrich each holding with current price + 1-month history
+    const enriched = await Promise.all(holdings.map(async (h) => {
+      const priceData = await fetchPrice(h.ticker);
+      const currentPrice = priceData?.price ?? null;
+      const dayChangePct = priceData?.change_pct ?? null;
+
+      // Fetch 1-month price history
+      let history = [];
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${h.ticker}?interval=1d&range=1mo`;
+        const hRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const hJson = await hRes.json();
+        const result = hJson.chart?.result?.[0];
+        if (result) {
+          const timestamps = result.timestamp || [];
+          const closes = result.indicators?.quote?.[0]?.close || [];
+          history = timestamps.map((ts, i) => ({
+            date: new Date(ts * 1000).toISOString().split('T')[0],
+            close: closes[i] ? parseFloat(closes[i].toFixed(2)) : null,
+          })).filter(p => p.close !== null);
+        }
+      } catch (e) { /* skip history if unavailable */ }
+
+      const costBasis = h.avg_cost * h.shares;
+      const marketValue = currentPrice ? currentPrice * h.shares : null;
+      const gainLossPct = marketValue && costBasis ? ((marketValue - costBasis) / costBasis * 100) : null;
+
+      // Calculate 1-week and 1-month change
+      const sortedHistory = [...history].sort((a, b) => a.date.localeCompare(b.date));
+      const latestClose = sortedHistory[sortedHistory.length - 1]?.close;
+      const weekAgoClose = sortedHistory[sortedHistory.length - 6]?.close;
+      const monthAgoClose = sortedHistory[0]?.close;
+      const weekChangePct = latestClose && weekAgoClose ? ((latestClose - weekAgoClose) / weekAgoClose * 100) : null;
+      const monthChangePct = latestClose && monthAgoClose ? ((latestClose - monthAgoClose) / monthAgoClose * 100) : null;
+
+      return {
+        ticker: h.ticker,
+        shares: h.shares,
+        avg_cost: h.avg_cost,
+        current_price: currentPrice,
+        market_value: marketValue,
+        gain_loss_pct: gainLossPct,
+        day_change_pct: dayChangePct,
+        week_change_pct: weekChangePct,
+        month_change_pct: monthChangePct,
+        history: sortedHistory.slice(-10).map(p => `${p.date}: $${p.close}`).join(', '),
+      };
+    }));
+
+    // 3. Build context for Claude
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' });
+    const holdingLines = enriched.map(h =>
+      `${h.ticker}: ${h.shares} shares @ avg cost $${h.avg_cost?.toFixed(2)}, current $${h.current_price?.toFixed(2)}, ` +
+      `day change ${h.day_change_pct?.toFixed(2)}%, week change ${h.week_change_pct?.toFixed(2)}%, month change ${h.month_change_pct?.toFixed(2)}%, ` +
+      `overall P&L ${h.gain_loss_pct?.toFixed(2)}% | Recent prices: ${h.history}`
+    ).join('\n');
+
+    const systemPrompt = `You are Folio AI, a personal investment advisor. Today is ${today} (US Eastern Time). The US market opens in about 90 minutes.
+
+You will analyse the user's portfolio and provide a concise pre-market morning briefing with actionable buy/sell/hold signals for each position.
+
+Portfolio holdings:
+${holdingLines}
+
+Your analysis must:
+1. For EACH ticker, give one of: 🟢 BUY MORE / 🟡 HOLD / 🔴 TRIM/SELL — with a 1-2 sentence reason
+2. Highlight any position showing unusual movement (up or down 3%+ in a week)
+3. Give an "Overall Portfolio Mood" — Bullish / Neutral / Cautious
+4. End with a "Top Action for Today" — the single most important thing to consider acting on before market open
+5. Keep the whole analysis concise and scannable — this is a morning briefing, not an essay
+6. Use current market context and trends in your reasoning
+
+Format your response in clean HTML suitable for an email (use <h2>, <h3>, <ul>, <li>, <strong>, <span> tags). Use inline styles for colours: green (#22c55e) for BUY, orange (#f59e0b) for HOLD, red (#ef4444) for TRIM/SELL. Do not include <html>, <head>, or <body> tags — just the inner content.`;
+
+    // 4. Call Claude
+    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'web-search-2025-03-05',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 2000,
+        system: systemPrompt,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: 'Please generate my pre-market portfolio briefing for today.' }],
+      }),
+    });
+
+    const aiData = await aiResponse.json();
+    if (!aiResponse.ok) throw new Error(aiData.error?.message || 'Claude API failed');
+
+    const analysisHtml = aiData.content
+      ?.filter(b => b.type === 'text')
+      ?.map(b => b.text)
+      ?.join('\n') || '<p>No analysis generated.</p>';
+
+    // Track usage
+    const usage = aiData.usage || {};
+    const inputTokens = usage.input_tokens || 0;
+    const outputTokens = usage.output_tokens || 0;
+    const costUSD = (inputTokens / 1_000_000 * 3) + (outputTokens / 1_000_000 * 15);
+    await pool.query(
+      `INSERT INTO ai_usage (input_tokens, output_tokens, cost_usd) VALUES ($1, $2, $3)`,
+      [inputTokens, outputTokens, costUSD]
+    );
+
+    // 5. Build email HTML
+    const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' });
+    const emailHtml = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;background:#0f1117;color:#e2e8f0;border-radius:12px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#1a1d2e 0%,#16213e 100%);padding:28px 32px;border-bottom:1px solid #2a2d3d">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:24px">✨</span>
+            <div>
+              <div style="font-size:20px;font-weight:700;color:#ffffff">Folio Morning Briefing</div>
+              <div style="font-size:13px;color:#7b7f94;margin-top:2px">${dateStr} · Pre-market analysis</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:28px 32px">
+          ${analysisHtml}
+        </div>
+
+        <div style="padding:16px 32px 24px;border-top:1px solid #2a2d3d;font-size:11px;color:#7b7f94;text-align:center">
+          Folio AI · This is not professional financial advice. Always do your own research before trading.
+          <br>Analysis generated at 8:00 AM ET · Powered by Claude AI
+        </div>
+      </div>`;
+
+    // 6. Send email via Resend
+    const emailRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({
+        from: 'Folio <onboarding@resend.dev>',
+        to: [alertEmail],
+        subject: `📈 Folio Morning Briefing — ${dateStr}`,
+        html: emailHtml,
+      }),
+    });
+
+    const emailData = await emailRes.json();
+    if (!emailRes.ok) throw new Error(emailData.message || 'Email send failed');
+
+    console.log(`[Alerts] Morning briefing sent to ${alertEmail}`);
+    res.json({ success: true, message: `Briefing sent to ${alertEmail}`, cost_usd: costUSD });
+
+  } catch (e) {
+    console.error('[Alerts] Error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/ai/usage - lifetime + monthly stats
 app.get('/api/ai/usage', requireAuth, async (req, res) => {
   try {
