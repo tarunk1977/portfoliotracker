@@ -30,7 +30,7 @@ function TransactionModal({ onClose, onSave, holdings, existing }) {
       const payload = { ticker: ticker.toUpperCase(), type, shares: parseFloat(shares), price: parseFloat(price), date, notes };
       if (editing) {
         const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-        const token = localStorage.getItem('folio_token');
+        const token = localStorage.getItem('folio-token');
         const res = await fetch(`${BASE}/api/transactions/${existing.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -155,7 +155,7 @@ export function TransactionsPage({ holdings, onTradeLogged }) {
     if (!window.confirm('Delete this transaction? Holdings will be recalculated.')) return;
     try {
       const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-      const token = localStorage.getItem('folio_token');
+      const token = localStorage.getItem('folio-token');
       await fetch(`${BASE}/api/transactions/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
