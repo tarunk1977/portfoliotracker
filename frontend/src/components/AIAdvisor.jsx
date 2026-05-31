@@ -143,9 +143,10 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
 
     try {
       const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+      const token = localStorage.getItem('folio-token');
       const response = await fetch(`${BASE}/api/ai/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           systemPrompt,
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
@@ -197,9 +198,10 @@ Important: The user holds mostly dividend ETFs and income-focused stocks (JEPI, 
         total_gain_loss: fmt.currency(summary.total_gain_loss),
         total_gain_loss_pct: fmt.pct(summary.total_gain_loss_pct),
       } : null;
+      const token = localStorage.getItem('folio-token');
       const res = await fetch(`${BASE}/api/ai/email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ to, messages, summary: fmtSummary }),
       });
       const data = await res.json();
