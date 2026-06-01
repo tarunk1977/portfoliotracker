@@ -748,12 +748,33 @@ app.post('/api/price-alerts', requireAuth, async (req, res) => {
     `INSERT INTO price_alerts (ticker, condition, threshold_price) VALUES ($1, $2, $3) RETURNING *`,
     [ticker.toUpperCase(), condition, parseFloat(threshold_price)]
   );
+  // Immediately check if newly created alert is already triggered
+  const resendKey = process.env.RESEND_API_KEY;
+  const alertEmail = process.env.ALERT_EMAIL;
+  if (resendKey && alertEmail) {
+    checkPriceAlerts(resendKey, alertEmail).catch(e => console.error('[Price Alerts] Immediate check failed:', e));
+  }
   res.json(rows[0]);
 });
 
 app.delete('/api/price-alerts/:id', requireAuth, async (req, res) => {
   await pool.query(`DELETE FROM price_alerts WHERE id=$1`, [req.params.id]);
   res.json({ success: true });
+});
+
+// Standalone endpoint to check price alerts on demand (can be called by a separate cron job)
+app.post('/api/price-alerts/check', async (req, res) => {
+  const secret = process.env.ALERTS_SECRET;
+  if (secret && req.headers['x-alerts-secret'] !== secret) return res.status(401).json({ error: 'Unauthorized' });
+  const resendKey = process.env.RESEND_API_KEY;
+  const alertEmail = process.env.ALERT_EMAIL;
+  if (!resendKey || !alertEmail) return res.status(500).json({ error: 'RESEND_API_KEY or ALERT_EMAIL not configured' });
+  try {
+    const triggered = await checkPriceAlerts(resendKey, alertEmail);
+    res.json({ success: true, triggered: triggered.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Helper: check price alerts and send email if any triggered
