@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Bell } from 'lucide-react';
 import { fmt, gainColor } from '../utils/format';
 import { Sparkline, PriceHistoryModal } from './PriceHistory';
 import { PriceAlertModal } from './PriceAlertModal';
+
+const BASE = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
@@ -71,15 +73,31 @@ function HoldingCard({ h, onClick }) {
   );
 }
 
-function AlertBell({ holding, onOpen }) {
+// Builds the tooltip text from an array of alerts for a ticker
+function buildTooltip(alerts) {
+  return alerts
+    .map(a => `${a.condition === 'below' ? '📉 Below' : '📈 Above'} $${parseFloat(a.threshold_price).toFixed(2)}`)
+    .join('\n');
+}
+
+function AlertBell({ holding, tickerAlerts, onOpen }) {
+  const hasAlerts = tickerAlerts && tickerAlerts.length > 0;
+  const tooltip = hasAlerts
+    ? `Alerts set:\n${buildTooltip(tickerAlerts)}`
+    : 'Set price alert';
+
   return (
     <button
       className="icon-btn"
-      title="Set price alert"
+      title={tooltip}
       onClick={e => { e.stopPropagation(); onOpen(holding); }}
-      style={{ color: 'var(--muted)' }}
+      style={{
+        color: hasAlerts ? '#f59e0b' : 'var(--muted)',
+        filter: hasAlerts ? 'drop-shadow(0 0 4px rgba(245,158,11,0.5))' : 'none',
+        transition: 'color 0.2s, filter 0.2s',
+      }}
     >
-      <Bell size={13} />
+      <Bell size={13} fill={hasAlerts ? '#f59e0b' : 'none'} />
     </button>
   );
 }
@@ -90,6 +108,27 @@ export function HoldingsTable({ holdings }) {
   const [sortDir, setSortDir] = useState('desc');
   const [selectedHolding, setSelectedHolding] = useState(null);
   const [alertHolding, setAlertHolding] = useState(null);
+  // Map of ticker → alert[]
+  const [alertsMap, setAlertsMap] = useState({});
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('folio-token');
+      const res = await fetch(`${BASE}/api/price-alerts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      // Group by ticker
+      const map = {};
+      for (const a of data) {
+        if (!map[a.ticker]) map[a.ticker] = [];
+        map[a.ticker].push(a);
+      }
+      setAlertsMap(map);
+    } catch (e) { console.error(e); }
+  }, []);
+
+  useEffect(() => { loadAlerts(); }, [loadAlerts]);
 
   function handleSort(field) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -134,7 +173,7 @@ export function HoldingsTable({ holdings }) {
             <div key={h.ticker} style={{ position: 'relative' }}>
               <HoldingCard h={h} onClick={setSelectedHolding} />
               <div style={{ position: 'absolute', top: 10, right: 10 }}>
-                <AlertBell holding={h} onOpen={setAlertHolding} />
+                <AlertBell holding={h} tickerAlerts={alertsMap[h.ticker]} onOpen={setAlertHolding} />
               </div>
             </div>
           ))}
@@ -173,7 +212,7 @@ export function HoldingsTable({ holdings }) {
                     <td className="right mono">{fmt.currency(h.market_value)}</td>
                     <td className="right mono" style={{ color: gainColor(h.gain_loss) }}>{fmt.currency(h.gain_loss)}</td>
                     <td className="right mono" style={{ color: gainColor(h.gain_loss_pct), fontWeight: 600 }}>{fmt.pct(h.gain_loss_pct)}</td>
-                    <td><AlertBell holding={h} onOpen={setAlertHolding} /></td>
+                    <td><AlertBell holding={h} tickerAlerts={alertsMap[h.ticker]} onOpen={setAlertHolding} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -190,7 +229,10 @@ export function HoldingsTable({ holdings }) {
       )}
 
       {alertHolding && (
-        <PriceAlertModal holding={alertHolding} onClose={() => setAlertHolding(null)} />
+        <PriceAlertModal
+          holding={alertHolding}
+          onClose={() => { setAlertHolding(null); loadAlerts(); }}
+        />
       )}
     </>
   );
