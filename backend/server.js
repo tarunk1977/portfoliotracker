@@ -79,6 +79,17 @@ async function initDB() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage(created_at);
+
+    CREATE TABLE IF NOT EXISTS price_alerts (
+      id SERIAL PRIMARY KEY,
+      ticker VARCHAR(20) NOT NULL,
+      condition VARCHAR(10) NOT NULL CHECK (condition IN ('above', 'below')),
+      threshold_price NUMERIC(18,4) NOT NULL,
+      active BOOLEAN DEFAULT true,
+      last_triggered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_price_alerts_ticker ON price_alerts(ticker);
   `);
   console.log('DB initialized');
 }
@@ -722,6 +733,105 @@ app.post('/api/ai/email', requireAuth, async (req, res) => {
   }
 });
 
+// ── Price Alerts CRUD ────────────────────────────────────────────────────────
+
+app.get('/api/price-alerts', requireAuth, async (req, res) => {
+  const { rows } = await pool.query(`SELECT * FROM price_alerts ORDER BY created_at DESC`);
+  res.json(rows);
+});
+
+app.post('/api/price-alerts', requireAuth, async (req, res) => {
+  const { ticker, condition, threshold_price } = req.body;
+  if (!ticker || !condition || !threshold_price) return res.status(400).json({ error: 'ticker, condition, threshold_price required' });
+  if (!['above', 'below'].includes(condition)) return res.status(400).json({ error: 'condition must be above or below' });
+  const { rows } = await pool.query(
+    `INSERT INTO price_alerts (ticker, condition, threshold_price) VALUES ($1, $2, $3) RETURNING *`,
+    [ticker.toUpperCase(), condition, parseFloat(threshold_price)]
+  );
+  res.json(rows[0]);
+});
+
+app.delete('/api/price-alerts/:id', requireAuth, async (req, res) => {
+  await pool.query(`DELETE FROM price_alerts WHERE id=$1`, [req.params.id]);
+  res.json({ success: true });
+});
+
+// Helper: check price alerts and send email if any triggered
+async function checkPriceAlerts(resendKey, alertEmail) {
+  const fetch = require('node-fetch');
+  const { rows: alerts } = await pool.query(`SELECT * FROM price_alerts WHERE active = true`);
+  if (!alerts.length) return [];
+
+  const triggered = [];
+  for (const alert of alerts) {
+    const priceData = await fetchPrice(alert.ticker);
+    const currentPrice = priceData?.price;
+    if (!currentPrice) continue;
+
+    const hit = alert.condition === 'below'
+      ? currentPrice <= parseFloat(alert.threshold_price)
+      : currentPrice >= parseFloat(alert.threshold_price);
+
+    if (hit) {
+      triggered.push({ ...alert, current_price: currentPrice });
+      await pool.query(`UPDATE price_alerts SET last_triggered_at = NOW() WHERE id = $1`, [alert.id]);
+    }
+  }
+
+  if (triggered.length && resendKey && alertEmail) {
+    const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/New_York' });
+    const rows = triggered.map(a =>
+      `<tr>
+        <td style="padding:10px 12px"><span style="background:#1e2235;padding:4px 10px;border-radius:6px;font-weight:700;color:#a78bfa">${a.ticker}</span></td>
+        <td style="padding:10px 12px;color:${a.condition === 'below' ? '#ef4444' : '#22c55e'}">
+          ${a.condition === 'below' ? '📉 Dropped below' : '📈 Rose above'} $${parseFloat(a.threshold_price).toFixed(2)}
+        </td>
+        <td style="padding:10px 12px;font-family:monospace;font-weight:600">$${a.current_price.toFixed(2)}</td>
+      </tr>`
+    ).join('');
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;background:#0f1117;color:#e2e8f0;border-radius:12px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#1a1d2e 0%,#16213e 100%);padding:24px 28px;border-bottom:1px solid #2a2d3d">
+          <div style="font-size:18px;font-weight:700">🔔 Folio Price Alert${triggered.length > 1 ? 's' : ''}</div>
+          <div style="font-size:12px;color:#7b7f94;margin-top:4px">${dateStr}</div>
+        </div>
+        <div style="padding:24px 28px">
+          <p style="margin:0 0 16px;color:#94a3b8">The following price alert${triggered.length > 1 ? 's have' : ' has'} been triggered:</p>
+          <table style="width:100%;border-collapse:collapse;background:#1a1d2e;border-radius:8px;overflow:hidden">
+            <thead>
+              <tr style="background:#0f1117;font-size:11px;color:#7b7f94;text-transform:uppercase;letter-spacing:0.05em">
+                <th style="padding:8px 12px;text-align:left">Ticker</th>
+                <th style="padding:8px 12px;text-align:left">Alert</th>
+                <th style="padding:8px 12px;text-align:left">Current Price</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <p style="margin:20px 0 0;font-size:13px;color:#7b7f94">Log into Folio to review your positions and take action.</p>
+        </div>
+        <div style="padding:12px 28px 20px;border-top:1px solid #2a2d3d;font-size:11px;color:#7b7f94;text-align:center">
+          Folio AI · Not professional financial advice. Always do your own research.
+        </div>
+      </div>`;
+
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${resendKey}` },
+      body: JSON.stringify({
+        from: 'Folio <onboarding@resend.dev>',
+        to: [alertEmail],
+        subject: `🔔 Folio Price Alert — ${triggered.map(a => a.ticker).join(', ')}`,
+        html,
+      }),
+    });
+
+    console.log(`[Price Alerts] ${triggered.length} alert(s) triggered, email sent`);
+  }
+
+  return triggered;
+}
+
 // POST /api/alerts/run - daily morning alert (called by cron-job.org, secured by ALERTS_SECRET)
 app.post('/api/alerts/run', async (req, res) => {
   const secret = process.env.ALERTS_SECRET;
@@ -897,7 +1007,11 @@ Format your response in clean HTML suitable for an email (use <h2>, <h3>, <ul>, 
     if (!emailRes.ok) throw new Error(emailData.message || 'Email send failed');
 
     console.log(`[Alerts] Morning briefing sent to ${alertEmail}`);
-    res.json({ success: true, message: `Briefing sent to ${alertEmail}`, cost_usd: costUSD });
+
+    // Also check price alerts and send separate email if any triggered
+    const triggered = await checkPriceAlerts(resendKey, alertEmail);
+
+    res.json({ success: true, message: `Briefing sent to ${alertEmail}`, cost_usd: costUSD, price_alerts_triggered: triggered.length });
 
   } catch (e) {
     console.error('[Alerts] Error:', e);

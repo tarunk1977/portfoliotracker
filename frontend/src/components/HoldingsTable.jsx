@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronUp, ChevronDown, TrendingUp, TrendingDown } from 'lucide-react';
+import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Bell } from 'lucide-react';
 import { fmt, gainColor } from '../utils/format';
 import { Sparkline, PriceHistoryModal } from './PriceHistory';
+import { PriceAlertModal } from './PriceAlertModal';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
@@ -70,11 +71,25 @@ function HoldingCard({ h, onClick }) {
   );
 }
 
+function AlertBell({ holding, onOpen }) {
+  return (
+    <button
+      className="icon-btn"
+      title="Set price alert"
+      onClick={e => { e.stopPropagation(); onOpen(holding); }}
+      style={{ color: 'var(--muted)' }}
+    >
+      <Bell size={13} />
+    </button>
+  );
+}
+
 export function HoldingsTable({ holdings }) {
   const isMobile = useIsMobile();
   const [sortField, setSortField] = useState('market_value');
   const [sortDir, setSortDir] = useState('desc');
   const [selectedHolding, setSelectedHolding] = useState(null);
+  const [alertHolding, setAlertHolding] = useState(null);
 
   function handleSort(field) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -115,7 +130,14 @@ export function HoldingsTable({ holdings }) {
     <>
       {isMobile ? (
         <div className="holdings-cards">
-          {sorted.map(h => <HoldingCard key={h.ticker} h={h} onClick={setSelectedHolding} />)}
+          {sorted.map(h => (
+            <div key={h.ticker} style={{ position: 'relative' }}>
+              <HoldingCard h={h} onClick={setSelectedHolding} />
+              <div style={{ position: 'absolute', top: 10, right: 10 }}>
+                <AlertBell holding={h} onOpen={setAlertHolding} />
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <>
@@ -134,6 +156,7 @@ export function HoldingsTable({ holdings }) {
                   <Th field="market_value" right>Value</Th>
                   <Th field="gain_loss" right>Gain/Loss</Th>
                   <Th field="gain_loss_pct" right>Return</Th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -150,6 +173,7 @@ export function HoldingsTable({ holdings }) {
                     <td className="right mono">{fmt.currency(h.market_value)}</td>
                     <td className="right mono" style={{ color: gainColor(h.gain_loss) }}>{fmt.currency(h.gain_loss)}</td>
                     <td className="right mono" style={{ color: gainColor(h.gain_loss_pct), fontWeight: 600 }}>{fmt.pct(h.gain_loss_pct)}</td>
+                    <td><AlertBell holding={h} onOpen={setAlertHolding} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -163,6 +187,10 @@ export function HoldingsTable({ holdings }) {
 
       {selectedHolding && (
         <PriceHistoryModal holding={selectedHolding} onClose={() => setSelectedHolding(null)} />
+      )}
+
+      {alertHolding && (
+        <PriceAlertModal holding={alertHolding} onClose={() => setAlertHolding(null)} />
       )}
     </>
   );
