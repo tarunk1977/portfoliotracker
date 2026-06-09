@@ -1058,6 +1058,56 @@ app.get('/api/ai/usage', requireAuth, async (req, res) => {
   }
 });
 
+// ── Finance Health Integration ────────────────────────────────────────────────
+// GET /api/public/portfolio-summary
+// Protected by FOLIO_INTEGRATION_SECRET header (x-integration-secret).
+// Called server-side by the Finance Health app — never exposed to browser.
+app.get('/api/public/portfolio-summary', async (req, res) => {
+  const secret = process.env.FOLIO_INTEGRATION_SECRET;
+  if (!secret) return res.status(500).json({ error: 'FOLIO_INTEGRATION_SECRET not configured' });
+  if (req.headers['x-integration-secret'] !== secret) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const holdings = await computeHoldings();
+    const enriched = await Promise.all(holdings.map(async (h) => {
+      const price = await fetchPrice(h.ticker);
+      const currentPrice = price?.price ?? null;
+      const marketValue = currentPrice ? currentPrice * h.shares : null;
+      const costBasis = h.avg_cost * h.shares;
+      return {
+        ticker: h.ticker,
+        name: price?.name || h.ticker,
+        shares: parseFloat(h.shares.toFixed(4)),
+        avgCost: parseFloat(h.avg_cost.toFixed(4)),
+        currentPrice,
+        marketValue,
+        costBasis: parseFloat(costBasis.toFixed(2)),
+        gainLossPct: marketValue && costBasis > 0 ? parseFloat(((marketValue - costBasis) / costBasis * 100).toFixed(2)) : null,
+        dayChangePct: price?.changePct ? parseFloat(price.changePct.toFixed(2)) : null,
+      };
+    }));
+
+    const totalValue = enriched.reduce((s, h) => s + (h.marketValue || 0), 0);
+    const totalCost = enriched.reduce((s, h) => s + h.costBasis, 0);
+
+    res.json({
+      asOf: new Date().toISOString(),
+      currency: 'USD',
+      summary: {
+        totalValueUsd: parseFloat(totalValue.toFixed(2)),
+        totalCostUsd: parseFloat(totalCost.toFixed(2)),
+        totalGainLossUsd: parseFloat((totalValue - totalCost).toFixed(2)),
+        totalGainLossPct: totalCost > 0 ? parseFloat(((totalValue - totalCost) / totalCost * 100).toFixed(2)) : 0,
+        positionCount: enriched.length,
+      },
+      positions: enriched.sort((a, b) => (b.marketValue || 0) - (a.marketValue || 0)),
+    });
+  } catch (e) {
+    console.error('[Integration] Error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 initDB().then(() => {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
