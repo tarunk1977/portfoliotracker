@@ -31,6 +31,7 @@ function HoldingCard({ h, onClick }) {
             {isUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
             {fmt.pct(h.gain_loss_pct)}
           </div>
+          <div className="hcard-weight">{h.pct_of_portfolio.toFixed(1)}% of portfolio</div>
         </div>
       </div>
       <div className="hcard-stats">
@@ -135,7 +136,13 @@ export function HoldingsTable({ holdings }) {
     else { setSortField(field); setSortDir('desc'); }
   }
 
-  const sorted = [...(holdings || [])].sort((a, b) => {
+  const totalValue = (holdings || []).reduce((sum, h) => sum + (h.market_value || 0), 0);
+  const withPct = (holdings || []).map(h => ({
+    ...h,
+    pct_of_portfolio: totalValue ? (h.market_value / totalValue) * 100 : 0,
+  }));
+
+  const sorted = [...withPct].sort((a, b) => {
     const va = a[sortField] ?? 0;
     const vb = b[sortField] ?? 0;
     if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
@@ -193,6 +200,7 @@ export function HoldingsTable({ holdings }) {
                   <Th field="day_change_pct" right>Day</Th>
                   <Th field="cost_basis" right>Invested</Th>
                   <Th field="market_value" right>Value</Th>
+                  <Th field="pct_of_portfolio" right>% Port</Th>
                   <Th field="gain_loss" right>Gain/Loss</Th>
                   <Th field="gain_loss_pct" right>Return</Th>
                   <th></th>
@@ -210,6 +218,7 @@ export function HoldingsTable({ holdings }) {
                     <td className="right mono" style={{ color: gainColor(h.day_change_pct) }}>{fmt.pct(h.day_change_pct)}</td>
                     <td className="right mono" style={{ color: '#a78bfa', fontWeight: 500 }}>{fmt.currency(h.cost_basis)}</td>
                     <td className="right mono">{fmt.currency(h.market_value)}</td>
+                    <td className="right mono">{h.pct_of_portfolio.toFixed(1)}%</td>
                     <td className="right mono" style={{ color: gainColor(h.gain_loss) }}>{fmt.currency(h.gain_loss)}</td>
                     <td className="right mono" style={{ color: gainColor(h.gain_loss_pct), fontWeight: 600 }}>{fmt.pct(h.gain_loss_pct)}</td>
                     <td><AlertBell holding={h} tickerAlerts={alertsMap[h.ticker]} onOpen={setAlertHolding} /></td>

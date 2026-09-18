@@ -931,6 +931,11 @@ body {
   font-family: 'DM Mono', monospace;
   margin-top: 2px;
 }
+.hcard-weight {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
 .hcard-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
